@@ -1,0 +1,55 @@
+DESPLIEGUE API EN VERCEL (HTTPS PUBLICO)
+=========================================
+
+1) Cuenta en https://vercel.com e instala CLI: npm i -g vercel
+
+2) En la carpeta "backend" del repo:
+   vercel login
+   vercel
+   (acepta defaults; Framework: Other)
+
+3) Variables de entorno en Vercel → Project → Settings → Environment Variables
+   (Production y Preview):
+
+   TWILIO_ACCOUNT_SID
+   TWILIO_API_KEY
+   TWILIO_API_SECRET
+   TWILIO_TWIML_APP_SID
+   TWILIO_CALLER_ID
+   DEFAULT_INBOUND_CLIENT_IDENTITY   (ej. pedro_castro, igual que en la app)
+   TWILIO_PUSH_CREDENTIAL_SID_IOS    (opcional)
+   TWILIO_PUSH_CREDENTIAL_SID_ANDROID (opcional)
+   RING_TEST_SECRET                  (opcional; ver prueba de llamada a la app abajo)
+   PORT                              (opcional; Vercel ignora listen)
+
+4) Twilio Console → TwiML App → Voice Request URL:
+   https://TU-DOMINIO.vercel.app/voice
+   Metodo: HTTP POST
+
+4b) Llamadas entrantes (PSTN → tu app):
+   - Phone Numbers → Active number → Voice configuration:
+     "A CALL COMES IN" → TwiML App → elige la MISMA app (AP...) que usa TWILIO_TWIML_APP_SID.
+   - O bien URL de webhook directa POST a la misma /voice.
+   - En Vercel, DEFAULT_INBOUND_CLIENT_IDENTITY debe coincidir con mobile/src/config/voice.ts
+     (VOICE_AGENT_IDENTITY, por defecto pedro_castro).
+   - Android en segundo plano: suele hacer falta Push Credential (FCM) en Twilio y
+     TWILIO_PUSH_CREDENTIAL_SID_ANDROID en Vercel; con la app en primer plano suele bastar para probar.
+
+5) Produccion:
+   vercel --prod
+
+6) Probar que Twilio “llama” a la app desde el PC (sin marcar el numero):
+   - Elige un secreto largo y ponlo en RING_TEST_SECRET (local y/o Vercel) y redeploy.
+   - Abre la app en el movil, inicia sesion, espera a que desaparezca el aviso de registro Twilio.
+   - En PowerShell (sustituye URL y secreto):
+     curl.exe -X POST "https://backend-sigma-pink-72.vercel.app/test/ring-mobile" -H "Content-Type: application/json" -d "{\"secret\":\"TU_SECRETO\"}"
+   - Twilio crea una llamada saliente hacia client:IDENTIDAD; la app debe mostrar llamada entrante.
+   - Es la misma tecnologia que cuando alguien marca tu numero Twilio: todo pasa por Twilio y llega al SDK en el telefono.
+
+7) App movil: edita mobile/src/config/productionUrl.ts
+   PUBLIC_API_BASE_URL = "https://TU-DOMINIO.vercel.app"
+   (sin barra final). Genera de nuevo release APK o prueba en dev apuntando a esa URL si lo necesitas.
+
+Notas:
+- Vercel detecta Express en src/index.ts: export default app (sin serverless-http).
+- El API no sirve la app React Native; solo JSON/TwiML. La APK/IPA se distribuye aparte (Play Store, APK, TestFlight).

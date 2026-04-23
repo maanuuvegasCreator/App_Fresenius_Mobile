@@ -1,0 +1,28 @@
+# Secrets (nunca subir credenciales)
+backend/.env
+mobile/.env
+**/.env.local
+
+# Dependencias
+**/node_modules/
+
+# Builds / artefactos locales
+backend/dist/
+dist/
+*.apk
+*.aab
+
+# Vercel (se regenera al desplegar)
+**/.vercel/
+
+# Logs y cachés
+*.log
+npm-debug.log*
+.yarn/cache
+
+# SO / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
