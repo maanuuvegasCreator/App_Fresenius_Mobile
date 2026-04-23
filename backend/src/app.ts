@@ -12,6 +12,22 @@ export function createApp(): Express {
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
+  /** Vercel y navegador abren GET /; sin esto Express responde "Cannot GET /". */
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      name: "fresenius-softphone-api",
+      ok: true,
+      hint: "API Twilio Voice: las rutas útiles no son la raíz.",
+      routes: {
+        health: "GET /health",
+        voiceWebhook: "POST /voice",
+        accessToken: "GET /get-token?identity=pedro_castro&platform=android",
+        ringMobileTest: "POST /test/ring-mobile (JSON: { \"secret\": \"...\" })",
+        twimlAfterAnswer: "GET|POST /twilio/call-answered-say",
+      },
+    });
+  });
+
   registerVoiceRoutes(app);
   registerTestRingRoutes(app);
 
