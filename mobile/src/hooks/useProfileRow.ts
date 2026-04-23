@@ -12,6 +12,8 @@ export type ProfileRow = {
   department: string | null;
   role: string | null;
   status: string | null;
+  /** Identidad Twilio Client (misma regla que `twilioClientIdentityForUser` si el perfil está sincronizado). */
+  twilio_voice_identity: string | null;
 };
 
 export function useProfileRow(): {
@@ -47,7 +49,7 @@ export function useProfileRow(): {
     setError(null);
     const { data, error: qErr } = await getSupabase()
       .from('profiles')
-      .select('full_name, phone, department, role, status')
+      .select('full_name, phone, department, role, status, twilio_voice_identity')
       .eq('id', user.id)
       .maybeSingle();
 

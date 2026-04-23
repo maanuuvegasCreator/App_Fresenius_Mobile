@@ -1,17 +1,43 @@
 -- =============================================================================
--- Supabase → SQL Editor → ejecutar después de supabase-setup.sql
--- Agentes (contactos), historial demo, campos extra en perfil.
--- Idempotente en lo posible: agentes por teléfono; llamadas demo solo si el
--- usuario no tiene aún ninguna fila en call_logs.
+--  SUPABASE — PASO 2 (ejecutar después de supabase-setup.sql)
+-- =============================================================================
+--  Directorio de agentes, historial de llamadas, campos extra de perfil.
+--  Idempotente: agentes por teléfono; demo call_logs solo si el usuario no
+--  tenía ninguna fila aún.
+--
+--  Modelo ampliado:
+--
+--    public.profiles          public.call_logs
+--    (1:1 auth.users)         ┌────────────────────┐
+--         │                   │ user_id → profiles │
+--         │                   │ peer_name, phone   │
+--         └───────────────────│ direction, …       │
+--                             └────────────────────┘
+--
+--    public.agents (directorio global, solo lectura autenticados)
+--    ┌────────────────────────────────────┐
+--    │ full_name, phone, department, …  │
+--    └────────────────────────────────────┘
+--
 -- =============================================================================
 
+-- -----------------------------------------------------------------------------
+-- 1) Perfil: datos de contacto y puesto (Twilio id va en supabase-setup.sql)
+-- -----------------------------------------------------------------------------
 alter table public.profiles
   add column if not exists phone text,
   add column if not exists department text,
   add column if not exists role text,
   add column if not exists status text default 'Disponible';
 
--- Directorio de agentes (visible a cualquier usuario autenticado)
+comment on column public.profiles.phone is 'Teléfono de contacto del agente (E.164 recomendado)';
+comment on column public.profiles.department is 'Departamento o unidad';
+comment on column public.profiles.role is 'Rol laboral';
+comment on column public.profiles.status is 'Estado presencia (ej. Disponible)';
+
+-- -----------------------------------------------------------------------------
+-- 2) Directorio de agentes (catálogo compartido)
+-- -----------------------------------------------------------------------------
 create table if not exists public.agents (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
@@ -20,10 +46,35 @@ create table if not exists public.agents (
   department text,
   role text,
   sort_order int not null default 0,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-alter table public.agents add column if not exists role text;
+alter table public.agents add column if not exists updated_at timestamptz not null default now();
+
+comment on table public.agents is
+  'Listado de contactos internos; visible a cualquier usuario autenticado. No referencia auth.users.';
+
+comment on column public.agents.phone is 'Teléfono E.164; único a nivel de negocio (evitar duplicados en seeds)';
+
+drop index if exists public.agents_phone_uidx;
+create unique index agents_phone_uidx on public.agents (phone);
+
+create or replace function public.set_agents_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists agents_set_updated_at on public.agents;
+create trigger agents_set_updated_at
+  before update on public.agents
+  for each row
+  execute function public.set_agents_updated_at();
 
 alter table public.agents enable row level security;
 
@@ -36,7 +87,9 @@ create policy "agents_select_auth"
 grant select on public.agents to authenticated;
 revoke all on public.agents from anon;
 
--- Historial de llamadas (por usuario; luego sustituir / ampliar con Twilio)
+-- -----------------------------------------------------------------------------
+-- 3) Historial de llamadas (por usuario autenticado)
+-- -----------------------------------------------------------------------------
 create table if not exists public.call_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -46,6 +99,21 @@ create table if not exists public.call_logs (
   occurred_at timestamptz not null default now(),
   duration_label text
 );
+
+alter table public.call_logs add column if not exists twilio_call_sid text;
+
+comment on table public.call_logs is
+  'Historial de llamadas por usuario; twilio_call_sid opcional cuando integres webhooks Twilio.';
+
+comment on column public.call_logs.user_id is 'Dueño de la fila (= auth.uid() en políticas)';
+comment on column public.call_logs.direction is 'outgoing | incoming | missed';
+comment on column public.call_logs.duration_label is 'Texto legible (ej. 4:12); duración en segundos se puede añadir después';
+comment on column public.call_logs.twilio_call_sid is 'SID de Twilio CA…; nulo en datos demo o llamadas no registradas en Twilio';
+
+drop index if exists public.call_logs_twilio_call_sid_uidx;
+create unique index call_logs_twilio_call_sid_uidx
+  on public.call_logs (twilio_call_sid)
+  where twilio_call_sid is not null and trim(twilio_call_sid) <> '';
 
 create index if not exists call_logs_user_occurred_idx
   on public.call_logs (user_id, occurred_at desc);
@@ -68,7 +136,7 @@ grant select, insert on public.call_logs to authenticated;
 revoke all on public.call_logs from anon;
 
 -- -----------------------------------------------------------------------------
--- Agentes Fresenius Medical Care (departamentos y roles realistas)
+-- 4) Datos semilla: agentes (Fresenius Medical Care España)
 -- -----------------------------------------------------------------------------
 insert into public.agents (full_name, phone, company, department, role, sort_order)
 select v.full_name, v.phone, v.company, v.department, v.role, v.sort_order
@@ -117,7 +185,6 @@ from (
 ) as v(full_name, phone, company, department, role, sort_order)
 where not exists (select 1 from public.agents a where a.phone = v.phone);
 
--- Si ya existían filas sin rol (ejecución anterior), actualizar por teléfono
 update public.agents a
 set
   company = 'Fresenius Medical Care España',
@@ -134,8 +201,7 @@ from (
 where a.phone = v.phone;
 
 -- -----------------------------------------------------------------------------
--- Llamadas DEMO: se insertan para cada usuario de Auth que aún no tenga historial
--- (si quieres repetir, borra antes: delete from public.call_logs where user_id = '…';)
+-- 5) Llamadas DEMO (solo usuarios sin historial previo)
 -- -----------------------------------------------------------------------------
 insert into public.call_logs (user_id, peer_name, phone, direction, occurred_at, duration_label)
 select
@@ -200,7 +266,9 @@ cross join (
 ) as d(peer_name, phone, direction, occurred_at, duration_label)
 where not exists (select 1 from public.call_logs c where c.user_id = u.id);
 
--- Valores por defecto razonables en perfiles (solo donde falten texto)
+-- -----------------------------------------------------------------------------
+-- 6) Valores por defecto en perfiles (solo donde falten textos)
+-- -----------------------------------------------------------------------------
 update public.profiles p
 set
   department = coalesce(nullif(trim(p.department), ''), 'Contact Center – Atención al paciente renal'),

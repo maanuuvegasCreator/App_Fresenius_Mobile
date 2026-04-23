@@ -23,6 +23,7 @@ export function ProfileScreen() {
   const status = profile?.status?.trim() || '—';
   const department = profile?.department?.trim() || '—';
   const role = profile?.role?.trim() || '—';
+  const twilioId = profile?.twilio_voice_identity?.trim() || '—';
 
   return (
     <ScrollView
@@ -59,6 +60,7 @@ export function ProfileScreen() {
         <InfoCard label="Estado" value={status} />
         <InfoCard label="Departamento" value={department} />
         <InfoCard label="Rol" value={role} />
+        <InfoCard label="Identidad Twilio (enrutado)" value={twilioId} />
       </View>
 
       <Pressable
