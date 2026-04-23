@@ -1,0 +1,16 @@
+Fresenius — monorepo (escritorio + móvil + API ligera)
+=====================================================
+
+desktop/     App call center Thinkia (Vite + React + servidor Hono en server/).
+             Dev: cd desktop && pnpm install && pnpm dev  (API :8788 + Vite proxy /api)
+
+mobile/      React Native + Twilio Voice + Supabase.
+
+backend/     API Express mínima (tokens, /voice, pruebas). Vercel para el móvil.
+             Ruta alias: GET /api/twilio/token = mismo contrato que Thinkia (query identity).
+
+shared/      Código compartido: twilioIdentity (u_<uuid>) = misma regla móvil y escritorio con JWT.
+
+Identidad Twilio: con sesión Supabase (Bearer) el escritorio usa u_<userId>. Cookie mock_agent_email
+sigue usando identidad por email (solo desarrollo). Tabla agent_settings.identity en Supabase debe
+usar el mismo string que Twilio Client para cada agente (migrar filas antiguas si hacía falta).

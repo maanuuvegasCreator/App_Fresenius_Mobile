@@ -1,0 +1,187 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import twilio from "twilio";
+import { parseFrontendOrigins } from "./frontend-origins";
+import { getCallLogs } from "./twilio-call-logs";
+import { getAllAgents, updateAgentStatus } from "./availability-service";
+import { getCallerAuth, twilioIdentityFromAuth } from "./auth-context";
+import { createApiClient } from "./supabase-api";
+import { isMockAgentCredential } from "./mock-agents";
+import { handleVoicePost } from "./voice-post";
+import { centralitaTwilioRoutes } from "./centralita";
+import { issueTwilioVoiceAccessToken } from "./twilio-voice-token";
+
+export const app = new Hono().basePath("/api");
+
+const frontendOrigins = parseFrontendOrigins();
+const allowOpenCors = frontendOrigins.length === 0;
+
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (allowOpenCors) return "*";
+      if (!origin) return frontendOrigins[0];
+      if (frontendOrigins.includes(origin)) return origin;
+      return null;
+    },
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+    exposeHeaders: ["Set-Cookie"],
+    credentials: !allowOpenCors,
+  })
+);
+
+app.get("/health", (c) => c.json({ ok: true, service: "thinkia-api", base: "/api" }));
+
+/** Centralita cloud Twilio: webhooks + TwiML IVR (sin CRM / sin DB externa en este módulo). */
+app.route("/twilio", centralitaTwilioRoutes);
+
+app.get("/calls", async (c) => {
+  try {
+    const limit = Number(c.req.query("limit")) || 50;
+    const calls = await getCallLogs(limit);
+    return c.json({ calls });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return c.json({ calls: [], error: msg }, 500);
+  }
+});
+
+app.get("/agents", async (c) => {
+  try {
+    const agents = await getAllAgents();
+    return c.json({ agents });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed";
+    return c.json({ agents: [], error: msg }, 500);
+  }
+});
+
+app.post("/agents/status", async (c) => {
+  try {
+    const body = await c.req.json();
+    const identity = String(body.identity || "");
+    if (!identity) return c.json({ error: "Missing identity" }, 400);
+
+    const is_available =
+      typeof body.is_available === "boolean" ? body.is_available : body.agentStatus === "available";
+    const agentStatus = typeof body.agentStatus === "string" ? body.agentStatus : undefined;
+    const offlineMessage = typeof body.offlineMessage === "string" ? body.offlineMessage : undefined;
+
+    const req = c.req.raw;
+    const callerAuth = await getCallerAuth(req);
+    if (!callerAuth) return c.json({ error: "Unauthorized" }, 401);
+
+    const callerIdentity = twilioIdentityFromAuth(callerAuth);
+    if (callerIdentity !== identity) {
+      return c.json({ error: "Forbidden: only your own status can be updated" }, 403);
+    }
+
+    await updateAgentStatus(identity, is_available, offlineMessage, agentStatus);
+    return c.json({ ok: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to update agent";
+    return c.json({ error: msg }, 500);
+  }
+});
+
+app.get("/token", async (c) => {
+  const pushCredentialSid = c.req.query("pushCredentialSid");
+  const result = await issueTwilioVoiceAccessToken(c.req.raw, pushCredentialSid);
+  if (!result.ok) {
+    return c.json({ error: result.error }, result.status);
+  }
+  return c.json({ identity: result.identity, token: result.token });
+});
+
+app.get("/numbers", async (c) => {
+  try {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const apiKey = process.env.TWILIO_API_KEY;
+    const apiSecret = process.env.TWILIO_API_SECRET;
+    if (!accountSid || !apiKey || !apiSecret) {
+      return c.json({ numbers: [], error: "Missing Twilio credentials" }, 500);
+    }
+    const client = twilio(apiKey, apiSecret, { accountSid });
+    const incoming = await client.incomingPhoneNumbers.list({ limit: 50 });
+    const numbers = incoming.map((n) => ({
+      sid: n.sid,
+      name: n.friendlyName || n.phoneNumber,
+      number: n.phoneNumber,
+      countryCode: (n as { isoCountry?: string }).isoCountry ?? null,
+      voiceUrl: (n as { voiceUrl?: string }).voiceUrl || null,
+      smsUrl: (n as { smsUrl?: string }).smsUrl || null,
+      updatedAt: n.dateUpdated ? new Date(n.dateUpdated).toISOString() : null,
+    }));
+    return c.json({ numbers });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed";
+    return c.json({ numbers: [], error: msg }, 500);
+  }
+});
+
+app.get("/app-settings", async (c) => {
+  try {
+    const key = c.req.query("key") || "";
+    if (!key) return c.json({ error: "Missing key" }, 400);
+    const supabase = createApiClient();
+    const { data, error } = await supabase.from("app_settings").select("*").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return c.json({ key, value: data?.value ?? null, updated_at: data?.updated_at ?? null });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed";
+    return c.json({ error: msg }, 500);
+  }
+});
+
+app.post("/app-settings", async (c) => {
+  try {
+    const body = await c.req.json();
+    const key = String(body.key || "");
+    if (!key) return c.json({ error: "Missing key" }, 400);
+    const value = body.value ?? {};
+    const supabase = createApiClient();
+    const { error } = await supabase
+      .from("app_settings")
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) throw error;
+    return c.json({ ok: true });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed";
+    return c.json({ error: msg }, 500);
+  }
+});
+
+app.post("/auth/mock-login", async (c) => {
+  try {
+    const body = await c.req.json();
+    const email = String(body.email || "")
+      .toLowerCase()
+      .trim();
+    const password = String(body.password || "");
+    if (!isMockAgentCredential(email, password)) {
+      return c.json({ error: "Invalid mock credentials" }, 401);
+    }
+    const cookie = `mock_agent_email=${encodeURIComponent(email)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 7}`;
+    return c.json({ ok: true }, 200, { "Set-Cookie": cookie });
+  } catch {
+    return c.json({ error: "Bad request" }, 400);
+  }
+});
+
+app.post("/voice", async (c) => {
+  const res = await handleVoicePost(c.req.raw);
+  return res;
+});
+
+/** Twilio RecordingStatusCallback (POST form). Responder 200 evita reintentos infinitos. */
+app.post("/voice/recording", async (c) => {
+  try {
+    const text = await c.req.text();
+    console.log("[TWILIO_RECORDING_STATUS]", text.slice(0, 800));
+  } catch {
+    /* ignore */
+  }
+  return c.body(null, 200);
+});

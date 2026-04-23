@@ -1,5 +1,5 @@
 import cors from "cors";
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 
 import { loadTwilioVoiceEnv } from "./config/env.js";
 import { registerTestRingRoutes } from "./routes/testRing.js";
@@ -22,7 +22,7 @@ export function createApp(): Express {
         health: "GET /health",
         voiceWebhook: "POST /voice",
         accessToken:
-          "GET /get-token?identity=u_<uuid_hex_sin_guiones>&platform=android",
+          "GET /get-token o GET /api/twilio/token (?identity=&platform=)",
         ringMobileTest:
           "POST /test/ring-mobile (JSON: { \"secret\": \"...\", \"clientIdentity\": \"opcional\" })",
         twimlAfterAnswer: "GET|POST /twilio/call-answered-say",
@@ -38,9 +38,10 @@ export function createApp(): Express {
   });
 
   /**
-   * GET /get-token?identity=agente1&platform=ios|android
+   * Token Twilio Voice (misma lógica en /get-token y /api/twilio/token para Thinkia / escritorio).
+   * GET ?identity=u_<uuid>&platform=ios|android
    */
-  app.get("/get-token", (req, res) => {
+  const voiceTokenHandler: RequestHandler = (req, res) => {
     try {
       const identityRaw = req.query.identity;
       if (typeof identityRaw !== "string" || identityRaw.trim() === "") {
@@ -90,7 +91,10 @@ export function createApp(): Express {
       const message = err instanceof Error ? err.message : "Unknown error";
       res.status(500).json({ error: message });
     }
-  });
+  };
+
+  app.get("/get-token", voiceTokenHandler);
+  app.get("/api/twilio/token", voiceTokenHandler);
 
   return app;
 }

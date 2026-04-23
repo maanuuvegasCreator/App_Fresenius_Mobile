@@ -8,6 +8,7 @@ mobile/.env
 
 # Builds / artefactos locales
 backend/dist/
+desktop/dist/
 dist/
 *.apk
 *.aab

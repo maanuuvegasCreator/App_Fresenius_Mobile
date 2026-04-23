@@ -1,0 +1,10 @@
+{
+  "name": "fresenius-platform",
+  "private": true,
+  "description": "Monorepo: desktop (Thinkia), mobile (RN), backend Express (Twilio), shared/",
+  "scripts": {
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:desktop": "pnpm --dir desktop dev",
+    "start:mobile": "npm run start --prefix mobile"
+  }
+}
