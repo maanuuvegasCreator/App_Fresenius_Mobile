@@ -90,7 +90,14 @@ export function registerTestRingRoutes(app: Express): void {
       }
 
       const twimlUrl = `${base}/twilio/call-answered-say`;
-      const identity = dial.defaultInboundClientIdentity;
+      const rawTarget =
+        typeof req.body?.clientIdentity === "string"
+          ? req.body.clientIdentity.trim()
+          : "";
+      const identity =
+        /^[\w.-]{1,128}$/.test(rawTarget) && rawTarget.length <= 128
+          ? rawTarget
+          : dial.defaultInboundClientIdentity;
       const toClient = `client:${identity}`;
 
       const client = twilio(env.apiKeySid, env.apiKeySecret, {
@@ -107,9 +114,10 @@ export function registerTestRingRoutes(app: Express): void {
       res.status(200).json({
         ok: true,
         message:
-          "Twilio está llamando a la app. Debe sonar en el móvil si está registrada con la misma identidad.",
+          "Twilio está llamando a la app. Debe sonar en el móvil si hay sesión con esa identidad.",
         callSid: call.sid,
         dialed: toClient,
+        clientIdentity: identity,
         twimlUrl,
       });
     } catch (err) {

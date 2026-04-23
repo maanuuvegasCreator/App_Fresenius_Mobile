@@ -1,7 +1,11 @@
 import type { Express, Request, Response } from "express";
 import twilio from "twilio";
 
-import { loadVoiceDialEnv } from "../config/voiceDialEnv.js";
+import {
+  loadInboundToClientIdentityMap,
+  loadVoiceDialEnv,
+  resolveInboundClientIdentity,
+} from "../config/voiceDialEnv.js";
 
 type BindingRecord = {
   bindingType: string;
@@ -14,12 +18,14 @@ const bindings = new Map<string, BindingRecord>();
 /**
  * Twilio Voice URL webhook (TwiML App → POST /voice).
  * - Outbound from mobile: From starts with "client:" → Dial PSTN (To).
- * - Inbound PSTN: Dial Twilio Client (DEFAULT_INBOUND_CLIENT_IDENTITY).
+ * - Inbound PSTN: enruta a Client según `To` + INBOUND_TO_CLIENT_IDENTITY_JSON,
+ *   o si no hay mapa, a DEFAULT_INBOUND_CLIENT_IDENTITY.
  */
 export function registerVoiceRoutes(app: Express): void {
   app.post("/voice", (req: Request, res: Response) => {
     try {
       const env = loadVoiceDialEnv();
+      const inboundMap = loadInboundToClientIdentityMap();
       const from = String(req.body?.From ?? "");
       const to = String(req.body?.To ?? "").trim();
 
@@ -47,8 +53,14 @@ export function registerVoiceRoutes(app: Express): void {
           dial.number(to);
         }
       } else {
+        const called = String(req.body?.To ?? "").trim();
+        const inboundClient = resolveInboundClientIdentity(
+          called,
+          inboundMap,
+          env.defaultInboundClientIdentity,
+        );
         const dial = vr.dial();
-        dial.client(env.defaultInboundClientIdentity);
+        dial.client(inboundClient);
       }
 
       res.type("text/xml").status(200).send(vr.toString());

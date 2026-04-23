@@ -16,7 +16,8 @@ DESPLIEGUE API EN VERCEL (HTTPS PUBLICO)
    TWILIO_API_SECRET
    TWILIO_TWIML_APP_SID
    TWILIO_CALLER_ID
-   DEFAULT_INBOUND_CLIENT_IDENTITY   (ej. pedro_castro, igual que en la app)
+   DEFAULT_INBOUND_CLIENT_IDENTITY   (reserva si no usas mapa; cada usuario app usa u_<uuid>)
+   INBOUND_TO_CLIENT_IDENTITY_JSON   (opcional; ver voiceDialEnv.ts)
    TWILIO_PUSH_CREDENTIAL_SID_IOS    (opcional)
    TWILIO_PUSH_CREDENTIAL_SID_ANDROID (opcional)
    RING_TEST_SECRET                  (opcional; ver prueba de llamada a la app abajo)
@@ -30,8 +31,8 @@ DESPLIEGUE API EN VERCEL (HTTPS PUBLICO)
    - Phone Numbers → Active number → Voice configuration:
      "A CALL COMES IN" → TwiML App → elige la MISMA app (AP...) que usa TWILIO_TWIML_APP_SID.
    - O bien URL de webhook directa POST a la misma /voice.
-   - En Vercel, DEFAULT_INBOUND_CLIENT_IDENTITY debe coincidir con mobile/src/config/voice.ts
-     (VOICE_AGENT_IDENTITY, por defecto pedro_castro).
+   - Cada login en la app usa identidad Twilio u_<uuid_usuario> (ver mobile/src/lib/voiceIdentity.ts).
+   - Para PSTN a un número concreto → agente, rellena INBOUND_TO_CLIENT_IDENTITY_JSON en Vercel.
    - Android en segundo plano: suele hacer falta Push Credential (FCM) en Twilio y
      TWILIO_PUSH_CREDENTIAL_SID_ANDROID en Vercel; con la app en primer plano suele bastar para probar.
 
@@ -41,9 +42,9 @@ DESPLIEGUE API EN VERCEL (HTTPS PUBLICO)
 6) Probar que Twilio “llama” a la app desde el PC (sin marcar el numero):
    - Elige un secreto largo y ponlo en RING_TEST_SECRET (local y/o Vercel) y redeploy.
    - Abre la app en el movil, inicia sesion, espera a que desaparezca el aviso de registro Twilio.
-   - En PowerShell (sustituye URL y secreto):
-     curl.exe -X POST "https://backend-sigma-pink-72.vercel.app/test/ring-mobile" -H "Content-Type: application/json" -d "{\"secret\":\"TU_SECRETO\"}"
-   - Twilio crea una llamada saliente hacia client:IDENTIDAD; la app debe mostrar llamada entrante.
+   - En PowerShell (sustituye URL, secreto y opcionalmente clientIdentity = u_<uuid> del usuario logueado):
+     curl.exe -X POST "https://TU-API.vercel.app/test/ring-mobile" -H "Content-Type: application/json" -d "{\"secret\":\"TU_SECRETO\",\"clientIdentity\":\"u_abc123...\"}"
+   - Sin clientIdentity usa DEFAULT_INBOUND_CLIENT_IDENTITY. Twilio marca client:...; debe coincidir con la sesion activa en el movil.
    - Es la misma tecnologia que cuando alguien marca tu numero Twilio: todo pasa por Twilio y llega al SDK en el telefono.
 
 7) App movil: edita mobile/src/config/productionUrl.ts

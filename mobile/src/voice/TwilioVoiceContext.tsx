@@ -12,7 +12,6 @@ import { Alert, Platform } from 'react-native';
 import { Voice } from '@twilio/voice-react-native-sdk';
 
 import { getApiBaseUrl } from '../config/api';
-import { VOICE_AGENT_IDENTITY } from '../config/voice';
 
 function toE164(raw: string): string {
   const t = raw.trim();
@@ -31,7 +30,14 @@ type TwilioVoiceContextValue = {
 
 const TwilioVoiceContext = createContext<TwilioVoiceContextValue | null>(null);
 
-export function TwilioVoiceProvider({ children }: { children: ReactNode }) {
+export function TwilioVoiceProvider({
+  children,
+  voiceIdentity,
+}: {
+  children: ReactNode;
+  /** Identidad Twilio Client única por usuario (p. ej. `twilioClientIdentityForUser`). */
+  voiceIdentity: string;
+}) {
   const voiceRef = useRef(new Voice());
   const tokenRef = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -39,6 +45,8 @@ export function TwilioVoiceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const voice = voiceRef.current;
+    setReady(false);
+    setError(null);
 
     const onInvite = (invite: import('@twilio/voice-react-native-sdk').CallInvite) => {
       const from = invite.getFrom();
@@ -58,7 +66,7 @@ export function TwilioVoiceProvider({ children }: { children: ReactNode }) {
     async function bootstrap() {
       try {
         const qs = new URLSearchParams({
-          identity: VOICE_AGENT_IDENTITY,
+          identity: voiceIdentity,
           platform: Platform.OS === 'ios' ? 'ios' : 'android',
         });
         const base = getApiBaseUrl();
@@ -110,7 +118,7 @@ export function TwilioVoiceProvider({ children }: { children: ReactNode }) {
         void voice.unregister(t).catch(() => undefined);
       }
     };
-  }, []);
+  }, [voiceIdentity]);
 
   const connectPstn = useCallback(async (digits: string) => {
     const token = tokenRef.current;
@@ -128,12 +136,12 @@ export function TwilioVoiceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TwilioVoiceContextValue>(
     () => ({
       voice: voiceRef.current,
-      identity: VOICE_AGENT_IDENTITY,
+      identity: voiceIdentity,
       ready,
       error,
       connectPstn,
     }),
-    [ready, error, connectPstn],
+    [voiceIdentity, ready, error, connectPstn],
   );
 
   return (

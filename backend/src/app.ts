@@ -21,8 +21,10 @@ export function createApp(): Express {
       routes: {
         health: "GET /health",
         voiceWebhook: "POST /voice",
-        accessToken: "GET /get-token?identity=pedro_castro&platform=android",
-        ringMobileTest: "POST /test/ring-mobile (JSON: { \"secret\": \"...\" })",
+        accessToken:
+          "GET /get-token?identity=u_<uuid_hex_sin_guiones>&platform=android",
+        ringMobileTest:
+          "POST /test/ring-mobile (JSON: { \"secret\": \"...\", \"clientIdentity\": \"opcional\" })",
         twimlAfterAnswer: "GET|POST /twilio/call-answered-say",
       },
     });

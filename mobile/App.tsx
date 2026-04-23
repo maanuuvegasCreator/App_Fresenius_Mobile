@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { VoiceBootstrapBanner } from './src/components/VoiceBootstrapBanner';
+import { twilioClientIdentityForUser } from './src/lib/voiceIdentity';
 import { MainTabs } from './src/navigation/MainTabs';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { C } from './src/theme/colors';
@@ -44,8 +45,10 @@ function AppShell() {
     );
   }
 
+  const voiceIdentity = twilioClientIdentityForUser(session.user.id);
+
   return (
-    <TwilioVoiceProvider>
+    <TwilioVoiceProvider voiceIdentity={voiceIdentity}>
       <NavigationContainer theme={navTheme}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={{ flex: 1 }}>
