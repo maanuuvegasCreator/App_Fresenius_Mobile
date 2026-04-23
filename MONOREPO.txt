@@ -12,5 +12,7 @@ backend/     API Express mínima (tokens, /voice, pruebas). Vercel para el móvi
 shared/      Código compartido: twilioIdentity (u_<uuid>) = misma regla móvil y escritorio con JWT.
 
 Identidad Twilio: con sesión Supabase (Bearer) el escritorio usa u_<userId>. Cookie mock_agent_email
-sigue usando identidad por email (solo desarrollo). Tabla agent_settings.identity en Supabase debe
-usar el mismo string que Twilio Client para cada agente (migrar filas antiguas si hacía falta).
+sigue usando identidad por email (solo desarrollo).
+
+Si ya usabas la app Thinkia con filas en agent_settings.identity basadas en email, actualiza esas
+filas al nuevo u_<uuid del mismo usuario> o el estado/disponibilidad no coincidirá con el token.
